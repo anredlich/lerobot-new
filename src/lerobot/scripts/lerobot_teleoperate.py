@@ -189,6 +189,22 @@ def teleop_loop(
     # warning when the loop cannot keep up and the summary of where the time went.
     timer = CycleTimer(fps, records_data=False)
     start = time.perf_counter()
+    # --- esc-to-stop: non-blocking key listener ---
+    stop_requested = {"value": False}
+    try:
+        from pynput import keyboard
+
+        def _on_press(key):
+            if key == keyboard.Key.esc:
+                stop_requested["value"] = True
+                return False  # stop the listener
+
+        _listener = keyboard.Listener(on_press=_on_press)
+        _listener.start()
+        logging.info("Press ESC to stop teleoperation gracefully.")
+    except Exception as e:
+        _listener = None
+        logging.warning(f"ESC-to-stop unavailable ({e}); use Ctrl+C or the time limit.")    
     try:
         while True:
             timer.tick()
@@ -242,10 +258,14 @@ def teleop_loop(
             print(f"Teleop loop time: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
             move_cursor_up(1)
 
+            if stop_requested["value"]:
+                return
             if duration is not None and time.perf_counter() - start >= duration:
                 return
     finally:
         # In `finally` so ^C — how a teleop session normally ends — still reports.
+        if _listener is not None:
+            _listener.stop()
         timer.log_run_summary()
 
 
@@ -287,7 +307,7 @@ def teleoperate(cfg: TeleoperateConfig):
         pass
     finally:
         if cfg.display_data:
-            shutdown_visualization(cfg.display_mode)
+            pass  # shutdown_visualization(cfg.display_mode) # leave viewer running so it doesn't hang -anr
         teleop.disconnect()
         robot.disconnect()
 

@@ -424,6 +424,7 @@ def init_keyboard_listener():
         "exit_early": False,
         "rerecord_episode": False,
         "stop_recording": False,
+        "start": False,
     }
 
     # Accept the single-byte letter equivalents n/r/q alongside the arrow/Esc keys: the
@@ -437,6 +438,8 @@ def init_keyboard_listener():
             apply_recording_control("left", events)
         elif key in ("esc", "q"):
             apply_recording_control("esc", events)
+        elif key in ("space",):
+            events["start"] = True            
         # other keys (incl. up/down) are intentionally ignored
 
     listener = create_key_listener(on_key, controls_help="Right/Left/Esc, or n=next, r=re-record, q=quit")

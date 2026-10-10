@@ -491,6 +491,13 @@ def record(
 
         listener, events = init_keyboard_listener()
 
+        #add startup delay, anr
+        log_say("Ready to record. Press the space bar to start.", cfg.play_sounds)
+        logging.info("Ready. Press SPACE to start recording (ESC to cancel).")
+        while not events["start"] and not events["stop_recording"]:
+            time.sleep(0.1)
+        events["start"] = False
+
         if not cfg.dataset.streaming_encoding:
             logging.info(
                 "Streaming encoding is disabled. If you have capable hardware, consider enabling it for way faster episode saving. --dataset.streaming_encoding=true --dataset.encoder_threads=2 # --dataset.rgb_encoder.vcodec=auto. More info in the documentation: https://huggingface.co/docs/lerobot/streaming_video_encoding"
@@ -577,7 +584,7 @@ def record(
             listener.stop()
 
         if cfg.display_data:
-            shutdown_visualization(cfg.display_mode)
+            pass #shutdown_visualization(cfg.display_mode) # leave viewer running so it doesn't hang -anr
 
         if cfg.dataset.push_to_hub:
             if dataset and dataset.num_episodes > 0:

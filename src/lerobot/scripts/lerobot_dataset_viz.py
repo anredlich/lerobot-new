@@ -303,6 +303,11 @@ def visualize_dataset(
         except KeyboardInterrupt:
             logger.info("Ctrl-C received. Exiting.")
 
+    elif mode == "local" and spawn_local_viewer:
+        # Explicitly disconnect so the spawned viewer is cleanly detached instead of the
+        # gRPC connection dropping abruptly on exit, which hangs it on rerun-sdk 0.26.x. -anr
+        rr.disconnect()
+        
     return None
 
 
