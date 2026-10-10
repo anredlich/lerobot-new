@@ -498,6 +498,13 @@ def record(
             time.sleep(0.1)
         events["start"] = False
 
+        # Home both arms (leader held stiff at home) before recording starts, so every
+        # episode (incl. the first) begins from the same pose with no jump. -anr
+        if hasattr(robot, "go_home"):
+            robot.go_home()
+        if teleop is not None and hasattr(teleop, "go_home"):
+            teleop.go_home()
+
         if not cfg.dataset.streaming_encoding:
             logging.info(
                 "Streaming encoding is disabled. If you have capable hardware, consider enabling it for way faster episode saving. --dataset.streaming_encoding=true --dataset.encoder_threads=2 # --dataset.rgb_encoder.vcodec=auto. More info in the documentation: https://huggingface.co/docs/lerobot/streaming_video_encoding"
@@ -508,6 +515,10 @@ def record(
             while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
                 episode_index = dataset.num_episodes
                 log_say(f"Recording episode {episode_index}", cfg.play_sounds)
+                # Release the leader so the operator can teleoperate this episode. -anr
+                if teleop is not None and hasattr(teleop, "release"):
+                    teleop.release()
+                    time.sleep(0.5)  # let external-effort mode settle before first read                
                 record_loop(
                     robot=robot,
                     events=events,
@@ -532,20 +543,29 @@ def record(
                 ):
                     log_say("Reset the environment", cfg.play_sounds)
 
-                    record_loop(
-                        robot=robot,
-                        events=events,
-                        fps=cfg.dataset.fps,
-                        teleop_action_processor=teleop_action_processor,
-                        robot_action_processor=robot_action_processor,
-                        robot_observation_processor=robot_observation_processor,
-                        teleop=teleop,
-                        control_time_s=cfg.dataset.reset_time_s,
-                        single_task=cfg.dataset.single_task,
-                        display_data=cfg.display_data,
-                        display_mode=cfg.display_mode,
-                        display_compressed_images=display_compressed_images,
-                    )
+                    # Reset phase: home both arms, leader held stiff at home, NO teleop —
+                    # so the scene can be reset and the next episode starts from home with
+                    # no jump. Falls back to the original teleoperating reset for robots
+                    # that don't provide go_home (keeps this script robot-agnostic). -anr
+                    if hasattr(robot, "go_home") and teleop is not None and hasattr(teleop, "go_home"):
+                        robot.go_home()
+                        teleop.go_home()
+                        time.sleep(cfg.dataset.reset_time_s)
+                    else:
+                        record_loop(
+                            robot=robot,
+                            events=events,
+                            fps=cfg.dataset.fps,
+                            teleop_action_processor=teleop_action_processor,
+                            robot_action_processor=robot_action_processor,
+                            robot_observation_processor=robot_observation_processor,
+                            teleop=teleop,
+                            control_time_s=cfg.dataset.reset_time_s,
+                            single_task=cfg.dataset.single_task,
+                            display_data=cfg.display_data,
+                            display_mode=cfg.display_mode,
+                            display_compressed_images=display_compressed_images,
+                        )
 
                 if events["rerecord_episode"]:
                     log_say("Re-record episode", cfg.play_sounds)
