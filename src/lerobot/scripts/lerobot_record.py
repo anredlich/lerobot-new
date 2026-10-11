@@ -612,6 +612,35 @@ def record(
             else:
                 logging.warning("No episodes saved — skipping push to hub")
 
+        # Produce a v2.1 copy for openpi/GR00T, which cannot read v3.0. The recorded v3.0
+        # is left untouched at its root (so --resume keeps working); the v2.1 lands at the
+        # sibling "<root>_v21" and is extended incrementally on resume. Wrapped so a
+        # conversion error never harms the recording. Robot-agnostic: off unless opted in. -anr
+        if (
+            cfg.dataset.output_version == "v2.1"
+            and dataset is not None
+            and dataset.num_episodes > 0
+        ):
+            try:
+                from pathlib import Path as _Path
+
+                from lerobot.scripts.convert_dataset_v30_to_v21 import convert_dataset_path
+
+                v30_root = _Path(dataset.root)
+                log_say("Converting dataset to version 2.1", cfg.play_sounds, blocking=True)
+                v21_root = convert_dataset_path(
+                    v30_root,
+                    incremental=True,
+                    trossen_subversion=(cfg.dataset.trossen_subversion or None),
+                    rename_motors=cfg.dataset.v21_joint_names,
+                )
+                logging.info("Wrote v2.1 dataset to %s", v21_root)
+            except Exception:
+                logging.exception(
+                    "v2.1 conversion failed; the recorded v3.0 dataset is intact at %s",
+                    getattr(dataset, "root", "<unknown>"),
+                )
+
         log_say("Exiting", cfg.play_sounds)
     return dataset
 

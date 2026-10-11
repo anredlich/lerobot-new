@@ -1,0 +1,25 @@
+lerobot-v3-v2-converter
+Copyright 2026 Dongyoon Kim
+
+This product includes software developed by NVIDIA Corporation and by
+the Hugging Face team.
+
+Vendored components
+-------------------
+
+v3_to_v2/_nvidia_convert.py
+    Source : https://github.com/NVIDIA/Isaac-GR00T
+    Path   : scripts/lerobot_conversion/convert_v3_to_v2.py
+    Commit : 23ace64f17aa5015259b8609d371eb61a357c776
+    Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+    Licensed under the Apache License, Version 2.0.
+
+v2_to_v3/_hf_convert.py
+    Source  : https://github.com/huggingface/lerobot
+    Path    : src/lerobot/datasets/v30/convert_dataset_v21_to_v30.py
+    Version : lerobot 0.4.1
+    Copyright 2025 The HuggingFace Inc. team. All rights reserved.
+    Licensed under the Apache License, Version 2.0.
+
+Both vendored files are reproduced verbatim and retain their original
+Apache 2.0 license headers.

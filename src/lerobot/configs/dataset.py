@@ -74,7 +74,17 @@ class DatasetRecordConfig:
     # Skip appending the date-time tag to repo_id, keeping the user-provided name as-is
     # (e.g. self-managed versioned names intended for a later `lerobot-edit-dataset merge`).
     no_stamp: bool = False
-
+    # anr: output dataset format version -- "v3.0" (default, native lerobot) or "v2.1".
+    # "v2.1" keeps the recorded v3.0 at --dataset.root (so --resume still works) and writes
+    # a v2.1 copy alongside at "<root>_v21" for openpi/GR00T, which cannot read v3.0.
+    output_version: str = "v3.0"
+    # anr: trossen_subversion stamped into the v2.1 info.json (required by the old Interbotix/
+    # LeRobot loader + openpi/GR00T). "" to skip. Only used when output_version="v2.1".
+    trossen_subversion: str = "v1.0"
+    # anr: rename the state/action motor names in the v2.1 info.json only (metadata; v3.0 keeps
+    # joint_0.pos..left_carriage_joint.pos). Length must match the feature dim. None = keep names.
+    v21_joint_names: list[str] | None = None
+    
     def stamp_repo_id(self) -> None:
         """Append a date-time tag to ``repo_id`` so each recording session gets a unique name.
 
