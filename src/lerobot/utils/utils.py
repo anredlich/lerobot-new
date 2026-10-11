@@ -111,8 +111,82 @@ def format_big_number(num, precision=0):
 
     return num
 
+# anr: optional local neural TTS via Kokoro (kokoro-onnx). Used when the model files are
+# present and pointed to by env vars; otherwise say() falls back to the system TTS
+# (spd-say / macOS say / PowerShell). Loaded lazily and cached, so importing this module
+# stays cheap and never hard-depends on Kokoro.
+#   LEROBOT_KOKORO_MODEL   path to kokoro-v1.0.onnx
+#   LEROBOT_KOKORO_VOICES  path to voices-v1.0.bin
+#   LEROBOT_KOKORO_VOICE   voice name          (default: af_aoede)
+#   LEROBOT_KOKORO_SPEED   speed factor        (default: 0.85)
+#   LEROBOT_APLAY_DEVICE   aplay output device (default: pulse)
+_kokoro_tts = None
+_kokoro_tried = False
+
+def _get_kokoro():
+    global _kokoro_tts, _kokoro_tried
+    if _kokoro_tried:
+        return _kokoro_tts
+    _kokoro_tried = True
+    model = os.environ.get("LEROBOT_KOKORO_MODEL")
+    voices = os.environ.get("LEROBOT_KOKORO_VOICES")
+    if not (model and voices and os.path.exists(model) and os.path.exists(voices)):
+        return None
+    try:
+        from kokoro_onnx import Kokoro
+
+        _kokoro_tts = Kokoro(model, voices)
+    except Exception as e:  # noqa: BLE001
+        logging.warning("Kokoro TTS unavailable (%s); using system TTS.", e)
+        _kokoro_tts = None
+    return _kokoro_tts
+
+
+def _say_kokoro(text: str, blocking: bool = False) -> bool:
+    """Speak via Kokoro if configured and available. Returns True if it handled the text."""
+    kokoro = _get_kokoro()
+    if kokoro is None:
+        return False
+
+    def _speak():
+        import tempfile
+
+        try:
+            import numpy as np
+            import soundfile as sf
+
+            voice = os.environ.get("LEROBOT_KOKORO_VOICE", "af_aoede")
+            speed = float(os.environ.get("LEROBOT_KOKORO_SPEED", "0.85"))
+            samples, sample_rate = kokoro.create(text, voice=voice, speed=speed, lang="en-us")
+            silence = np.zeros(int(0.5 * sample_rate), dtype=samples.dtype)
+            samples = np.concatenate([silence, samples])
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                sf.write(tmp.name, samples, sample_rate)
+                path = tmp.name
+            device = os.environ.get("LEROBOT_APLAY_DEVICE", "pulse")
+            subprocess.run(
+                ["aplay", "-D", device, path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            os.unlink(path)
+        except Exception as e:  # noqa: BLE001
+            logging.warning("Kokoro TTS failed: %s", e)
+
+    if blocking:
+        _speak()
+    else:
+        import threading
+
+        threading.Thread(target=_speak, daemon=True).start()
+    return True
 
 def say(text: str, blocking: bool = False) -> None:
+    
+    # anr: prefer the local Kokoro neural TTS when configured; else fall through to system TTS.
+    if _say_kokoro(text, blocking):
+        return
+    
     system = platform.system()
 
     if system == "Darwin":

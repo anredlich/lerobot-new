@@ -491,6 +491,13 @@ def record(
 
         listener, events = init_keyboard_listener()
 
+        # Home both arms (leader held stiff at home) before recording starts, so every
+        # episode (incl. the first) begins from the same pose with no jump. -anr
+        if hasattr(robot, "go_home"):
+            robot.go_home()
+        if teleop is not None and hasattr(teleop, "go_home"):
+            teleop.go_home()
+
         #add startup delay, anr
         log_say("Ready to record. Press the space bar to start.", cfg.play_sounds)
         logging.info("Ready. Press SPACE to start recording (ESC to cancel).")
@@ -498,12 +505,12 @@ def record(
             time.sleep(0.1)
         events["start"] = False
 
-        # Home both arms (leader held stiff at home) before recording starts, so every
-        # episode (incl. the first) begins from the same pose with no jump. -anr
-        if hasattr(robot, "go_home"):
-            robot.go_home()
-        if teleop is not None and hasattr(teleop, "go_home"):
-            teleop.go_home()
+        # # Home both arms (leader held stiff at home) before recording starts, so every
+        # # episode (incl. the first) begins from the same pose with no jump. -anr
+        # if hasattr(robot, "go_home"):
+        #     robot.go_home()
+        # if teleop is not None and hasattr(teleop, "go_home"):
+        #     teleop.go_home()
 
         if not cfg.dataset.streaming_encoding:
             logging.info(
@@ -568,7 +575,7 @@ def record(
                         )
 
                 if events["rerecord_episode"]:
-                    log_say("Re-record episode", cfg.play_sounds)
+                    log_say("Re-record episode", cfg.play_sounds, blocking=True)
                     events["rerecord_episode"] = False
                     events["exit_early"] = False
                     dataset.clear_episode_buffer()
@@ -576,6 +583,7 @@ def record(
                     timer.restart()
                     continue
 
+                log_say(f"Saving episode {episode_index}", cfg.play_sounds)
                 dataset.save_episode()
                 recorded_episodes += 1
                 # Close the window on the episode just saved.  The digest is emitted on
@@ -585,6 +593,7 @@ def record(
                 # exempts that first tick, whose cameras have been idle for seconds.
                 timer.log_episode_summary(f"episode {episode_index}")
                 timer.restart()
+                log_say(f"Finished saving episode {episode_index}", cfg.play_sounds, blocking=True)
     finally:
         # First, and in `finally`: ^C is how most recording sessions end, and the summary
         # is most useful before the video encoding and the hub upload scroll it away.
