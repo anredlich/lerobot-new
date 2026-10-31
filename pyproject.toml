@@ -138,9 +138,17 @@ viz = [
     "rerun-sdk>=0.24.0,<0.34.0",
     "foxglove-sdk>=0.25.1,<0.26.0",
 ]
+# anr: local neural TTS (Kokoro) for log_say voice prompts during record/teleop.
+# soundfile writes the synthesized audio; kokoro-onnx pulls its own chain
+# (phonemizer, espeakng-loader, onnxruntime, ...). Needs the Kokoro .onnx model
+# files on disk, pointed to by LEROBOT_KOKORO_MODEL / LEROBOT_KOKORO_VOICES.
+tts = [
+    "kokoro-onnx>=0.6.1",
+    "soundfile>=0.14.0",
+]
 # ── User-facing composite extras (map to CLI scripts) ─────
 # lerobot-record, lerobot-replay, lerobot-calibrate, lerobot-teleoperate, etc.
-core_scripts = ["lerobot[dataset]", "lerobot[hardware]", "lerobot[viz]"]
+core_scripts = ["lerobot[dataset]", "lerobot[hardware]", "lerobot[viz]", "lerobot[tts]"]
 # lerobot-eval -- base evaluation framework. You also need the policy's extra (e.g., lerobot[pi])
 # and the environment's extra (e.g., lerobot[pusht]) if evaluating in simulation.
 evaluation = ["lerobot[av-dep]"]

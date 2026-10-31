@@ -64,6 +64,37 @@ While these devices are natively integrated into the LeRobot codebase, the libra
 
 For detailed hardware setup guides, see the [Hardware Documentation](https://huggingface.co/docs/lerobot/integrate_hardware).
 
+
+## Text-to-Speech (Kokoro)
+
+Spoken prompts during recording/teleoperation (`log_say`) can use the local
+neural TTS [Kokoro](https://github.com/thewh1teagle/kokoro-onnx). It is
+**optional**: if not configured, `log_say` falls back to the system TTS
+(`spd-say` on Linux, `say` on macOS, PowerShell on Windows).
+
+The `kokoro-onnx` and `soundfile` packages are declared in the `tts` extra and
+pulled in automatically by `core-scripts` (so `lerobot-record` /
+`lerobot-teleoperate` have them). The voice **model files** are a separate
+download and are pointed to by environment variables:
+
+1. Download the Kokoro model and voices (e.g. to `~/models/kokoro/`):
+   - `kokoro-v1.0.onnx`
+   - `voices-v1.0.bin`
+
+2. Set the environment variables (e.g. in `~/.bashrc`):
+
+   ```shell
+   export LEROBOT_KOKORO_MODEL="$HOME/models/kokoro/kokoro-v1.0.onnx"
+   export LEROBOT_KOKORO_VOICES="$HOME/models/kokoro/voices-v1.0.bin"
+   # optional:
+   # export LEROBOT_KOKORO_VOICE=af_aoede      # voice name (default af_aoede)
+   # export LEROBOT_KOKORO_SPEED=0.85          # speed factor (default 0.85)
+   # export LEROBOT_APLAY_DEVICE=pulse         # aplay output device (default pulse)
+   ```
+
+Kokoro loads lazily on first use and is cached; if the model files are missing
+or the variables are unset, it silently falls back to system TTS.
+
 ## LeRobot Dataset
 
 To solve the data fragmentation problem in robotics, we utilize the **LeRobotDataset** format.
