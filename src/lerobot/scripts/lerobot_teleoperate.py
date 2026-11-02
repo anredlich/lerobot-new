@@ -206,6 +206,14 @@ def teleop_loop(
         _listener = None
         logging.warning(f"ESC-to-stop unavailable ({e}); use Ctrl+C or the time limit.")    
     try:
+        # --- DIAGNOSTICS: mute lerobot's built-in per-tick "control loop running
+        # --- slower" warning (cycle_timer.py). We knowingly run below the fps
+        # --- target; this filters only that one message, leaving the end-of-run
+        # --- cadence summary and all errors intact.
+        class _DropSlowLoopWarning(logging.Filter):
+            def filter(self, record):
+                return "running slower" not in record.getMessage()
+        logging.getLogger("lerobot.utils.cycle_timer").addFilter(_DropSlowLoopWarning())
         while True:
             timer.tick()
             loop_start = time.perf_counter()  # for the live readout below
@@ -254,10 +262,28 @@ def teleop_loop(
                     move_cursor_up(len(robot_action_to_send) + 3)
 
             timer.wait()
-            loop_s = time.perf_counter() - loop_start
-            print(f"Teleop loop time: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
-            move_cursor_up(1)
 
+            # --- DIAGNOSTICS: loop-speed readout (pure instrumentation; no effect
+            # --- on teleop behavior). work = robot+hand compute this tick; tick =
+            # --- true tick-to-tick period incl. fps wait; avg = rolling Hz over the
+            # --- last N ticks (the number to compare across hand read modes).
+            now = time.perf_counter()
+            tick_s = now - getattr(teleop_loop, "_last_tick", now)
+            teleop_loop._last_tick = now
+            loop_work = now - loop_start
+            hist = getattr(teleop_loop, "_tick_hist", None)
+            if hist is None:
+                hist = []
+                teleop_loop._tick_hist = hist
+            if tick_s > 0:
+                hist.append(tick_s)
+                if len(hist) > 50:
+                    hist.pop(0)
+                avg_s = sum(hist) / len(hist)
+                print(f"Loop: work {loop_work * 1e3:5.1f}ms | tick {tick_s * 1e3:5.1f}ms "
+                      f"| avg {1 / avg_s:4.1f} Hz (n={len(hist)})")
+                move_cursor_up(1)
+ 
             if stop_requested["value"]:
                 return
             if duration is not None and time.perf_counter() - start >= duration:
