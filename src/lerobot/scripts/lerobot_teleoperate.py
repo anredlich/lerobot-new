@@ -187,6 +187,47 @@ def teleop_loop(
     # Teleoperation writes no dataset, so a missed deadline costs control smoothness
     # only.  The live readout below is the instantaneous rate; the timer adds the
     # warning when the loop cannot keep up and the summary of where the time went.
+    # --- space-to-start safety gate: don't begin mirroring the leader to the
+    # --- follower until the operator presses SPACE. The leader is already in
+    # --- gravity-comp (backdrivable) from connect(), so the operator can get
+    # --- into position first. ESC here cancels before any action is sent. -anr
+    try:
+        from pynput import keyboard as _kb
+        _gate = {"go": False}
+
+        def _on_gate(key):
+            if key == _kb.Key.space:
+                _gate["go"] = True
+                return False          # stop the listener -> start
+            if key == _kb.Key.esc:
+                return False          # stop the listener -> cancel
+
+        logging.info("Ready. Press SPACE to start teleoperation (ESC to cancel).")
+        with _kb.Listener(on_press=_on_gate) as _gl:
+            _gl.join()                # blocks here until SPACE or ESC
+        if not _gate["go"]:
+            logging.info("Teleoperation cancelled before start.")
+            return
+    except Exception as e:
+        logging.warning(f"Space-to-start unavailable ({e}); starting immediately.")
+
+    # Latch the orientation zero at the moment the operator starts, if the teleop
+    # supports it (surge leader with glove-orientation injection). Outside the gate
+    # try/except so an on_start() error isn't misreported as "space unavailable". -anr
+    if hasattr(teleop, "on_start"):
+        teleop.on_start()
+
+    # Pre-align the follower ARM to the leader's current pose with a slow blocking
+    # move, so the first teleop tick commands ~no motion (no startup jerk / velocity
+    # fault). Reads the leader's action (incl. frozen-wrist + glove injection) so the
+    # follower goes exactly where tick 1 would have jumped it. -anr
+    if hasattr(robot, "move_to_action"):
+        try:
+            robot.move_to_action(teleop.get_action(), goal_time=3.0)
+            logging.info("Follower pre-aligned to leader pose (3.0s).")
+        except Exception as e:
+            logging.warning(f"Startup follower alignment skipped ({e}).")
+            
     timer = CycleTimer(fps, records_data=False)
     start = time.perf_counter()
     # --- esc-to-stop: non-blocking key listener ---
