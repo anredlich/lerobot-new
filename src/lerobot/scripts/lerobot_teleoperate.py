@@ -227,7 +227,7 @@ def teleop_loop(
             logging.info("Follower pre-aligned to leader pose (3.0s).")
         except Exception as e:
             logging.warning(f"Startup follower alignment skipped ({e}).")
-            
+
     timer = CycleTimer(fps, records_data=False)
     start = time.perf_counter()
     # --- esc-to-stop: non-blocking key listener ---
@@ -236,6 +236,13 @@ def teleop_loop(
         from pynput import keyboard
 
         def _on_press(key):
+            # Generic hook: forward keys to the teleop (surge leader uses them for
+            # in-situ hand-calibration trims / capture). No-op otherwise. -anr
+            if hasattr(teleop, "on_key"):
+                try:
+                    teleop.on_key(key)
+                except Exception:
+                    pass
             if key == keyboard.Key.esc:
                 stop_requested["value"] = True
                 return False  # stop the listener
@@ -266,6 +273,11 @@ def teleop_loop(
                 # given that it is the identity processor as default
                 obs = robot.get_observation()
 
+                # Generic hook: let the teleop see each observation (surge leader
+                # uses it for in-situ hand calibration). No-op otherwise. -anr
+                if hasattr(teleop, "on_observation"):
+                    teleop.on_observation(obs)
+                    
                 if robot.name == "unitree_g1":
                     teleop.send_feedback(obs)
 
