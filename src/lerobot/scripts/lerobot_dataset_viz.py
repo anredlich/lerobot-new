@@ -217,6 +217,12 @@ def visualize_dataset(
     blueprint = build_blueprint_from_dataset(dataset)
     rr.init(f"{repo_id}/episode_{episode_index}", spawn=spawn_local_viewer, default_blueprint=blueprint)
 
+    # default_blueprint only applies when the viewer has no active blueprint for this app-id
+    # yet; a blueprint cached from an earlier run (e.g. a different robot / dim count under the
+    # same repo-id) otherwise persists and mislabels the series. Force the current schema's
+    # blueprint active every run. -anr
+    rr.send_blueprint(blueprint, make_active=True, make_default=True)
+    
     # Manually call python garbage collector after `rr.init` to avoid hanging in a blocking flush
     # when iterating on a dataloader with `num_workers` > 0
     # TODO(rcadene): remove `gc.collect` when rerun version 0.16 is out, which includes a fix

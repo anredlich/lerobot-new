@@ -391,6 +391,15 @@ def record(
 ) -> LeRobotDataset:
     init_logging()
     logging.info(pformat(asdict(cfg)))
+    # --- DIAGNOSTICS: mute lerobot's per-tick "control loop running slower" warning
+    # --- (cycle_timer.py). The Surge hand's serial GET/SET caps the loop below 30 Hz
+    # --- by design (already optimized), so the warning is expected noise here. Filters
+    # --- only that one message — the end-of-run cadence summary and all errors stay.
+    # --- Mirrors lerobot_teleoperate.py. -anr
+    class _DropSlowLoopWarning(logging.Filter):
+        def filter(self, record):
+            return "running slower" not in record.getMessage()
+    logging.getLogger("lerobot.utils.cycle_timer").addFilter(_DropSlowLoopWarning())
     if cfg.display_data:
         init_visualization(
             cfg.display_mode, session_name="recording", ip=cfg.display_ip, port=cfg.display_port
@@ -505,6 +514,13 @@ def record(
             time.sleep(0.1)
         events["start"] = False
 
+        events["start"] = False
+
+        # Latch the surge glove's orientation zero when the operator starts, if supported.
+        # hasattr-guarded; mirrors lerobot_teleoperate.py's on_start(). -anr
+        if teleop is not None and hasattr(teleop, "on_start"):
+            teleop.on_start()
+
         # # Home both arms (leader held stiff at home) before recording starts, so every
         # # episode (incl. the first) begins from the same pose with no jump. -anr
         # if hasattr(robot, "go_home"):
@@ -526,6 +542,15 @@ def record(
                 if teleop is not None and hasattr(teleop, "release"):
                     teleop.release()
                     time.sleep(0.5)  # let external-effort mode settle before first read                
+                # Surge: before each episode, slew the follower to the leader's current
+                # glove-driven pose over 3s so tick 1 commands ~no motion. get_action()
+                # carries the glove roll/pitch/yaw + finger IK, so this matches the glove.
+                # hasattr-guarded → only robots with move_to_action (the surge follower). -anr
+                if teleop is not None and hasattr(robot, "move_to_action"):
+                    try:
+                        robot.move_to_action(teleop.get_action(), goal_time=3.0)
+                    except Exception as e:
+                        logging.warning(f"Startup follower alignment skipped ({e}).")
                 record_loop(
                     robot=robot,
                     events=events,
@@ -630,25 +655,71 @@ def record(
             and dataset is not None
             and dataset.num_episodes > 0
         ):
+            # Run the converter in a FRESH subprocess instead of calling convert_dataset_path
+            # in-process. Called in-process from the live record session, the ffmpeg video cut
+            # intermittently stalls (46s–300s); a clean interpreter — none of record's threads,
+            # rerun viewer, or camera handles — matches the standalone run, which never stalls.
+            # The recorded v3.0 is left intact regardless. -anr
+            import json
+            import subprocess
+            import sys
+
+            v30_root = str(dataset.root)
+            convert_params = json.dumps(
+                {
+                    "dataset_dir": v30_root,
+                    "incremental": True,
+                    "trossen_subversion": (cfg.dataset.trossen_subversion or None),
+                    "rename_motors": (
+                        list(cfg.dataset.v21_joint_names) if cfg.dataset.v21_joint_names else None
+                    ),
+                }
+            )
+            convert_code = (
+                "import json, sys; "
+                "from lerobot.scripts.convert_dataset_v30_to_v21 import convert_dataset_path; "
+                "p = json.loads(sys.argv[1]); "
+                "convert_dataset_path("
+                "p['dataset_dir'], incremental=p['incremental'], "
+                "trossen_subversion=p['trossen_subversion'], rename_motors=p['rename_motors'])"
+            )
+            log_say("Converting dataset to version 2.1", cfg.play_sounds, blocking=True)
             try:
-                from pathlib import Path as _Path
-
-                from lerobot.scripts.convert_dataset_v30_to_v21 import convert_dataset_path
-
-                v30_root = _Path(dataset.root)
-                log_say("Converting dataset to version 2.1", cfg.play_sounds, blocking=True)
-                v21_root = convert_dataset_path(
-                    v30_root,
-                    incremental=True,
-                    trossen_subversion=(cfg.dataset.trossen_subversion or None),
-                    rename_motors=cfg.dataset.v21_joint_names,
+                subprocess.run(
+                    [sys.executable, "-c", convert_code, convert_params],
+                    stdin=subprocess.DEVNULL,
+                    check=True,
                 )
-                logging.info("Wrote v2.1 dataset to %s", v21_root)
+                logging.info("Wrote v2.1 dataset to %s_v21", v30_root)
             except Exception:
                 logging.exception(
                     "v2.1 conversion failed; the recorded v3.0 dataset is intact at %s",
                     getattr(dataset, "root", "<unknown>"),
                 )
+        # if (
+        #     cfg.dataset.output_version == "v2.1"
+        #     and dataset is not None
+        #     and dataset.num_episodes > 0
+        # ):
+        #     try:
+        #         from pathlib import Path as _Path
+
+        #         from lerobot.scripts.convert_dataset_v30_to_v21 import convert_dataset_path
+
+        #         v30_root = _Path(dataset.root)
+        #         log_say("Converting dataset to version 2.1", cfg.play_sounds, blocking=True)
+        #         v21_root = convert_dataset_path(
+        #             v30_root,
+        #             incremental=True,
+        #             trossen_subversion=(cfg.dataset.trossen_subversion or None),
+        #             rename_motors=cfg.dataset.v21_joint_names,
+        #         )
+        #         logging.info("Wrote v2.1 dataset to %s", v21_root)
+        #     except Exception:
+        #         logging.exception(
+        #             "v2.1 conversion failed; the recorded v3.0 dataset is intact at %s",
+        #             getattr(dataset, "root", "<unknown>"),
+        #         )
 
         log_say("Exiting", cfg.play_sounds)
     return dataset
