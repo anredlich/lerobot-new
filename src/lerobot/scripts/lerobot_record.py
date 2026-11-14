@@ -542,6 +542,13 @@ def record(
                 if teleop is not None and hasattr(teleop, "release"):
                     teleop.release()
                     time.sleep(0.5)  # let external-effort mode settle before first read                
+                # Re-latch the glove yaw zero at the START of every episode (not just the
+                # first space-bar on_start), so the glove's gyro/mag yaw drift can't
+                # accumulate across episodes. Placed BEFORE move_to_action so the follower
+                # slews to the freshly-zeroed pose and recording begins at d_yaw ~= 0.
+                # Re-uses on_start()'s own yaw latch; hasattr-guarded. -anr
+                if teleop is not None and hasattr(teleop, "on_start"):
+                    teleop.on_start()
                 # Surge: before each episode, slew the follower to the leader's current
                 # glove-driven pose over 3s so tick 1 commands ~no motion. get_action()
                 # carries the glove roll/pitch/yaw + finger IK, so this matches the glove.
