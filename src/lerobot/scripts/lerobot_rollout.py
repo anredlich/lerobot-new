@@ -218,6 +218,56 @@ from lerobot.utils.visualization_utils import init_visualization, shutdown_visua
 
 logger = logging.getLogger(__name__)
 
+# >>> keyboard controls for non-interactive rollout — SPACE advances the phases
+# (start -> end & freeze -> return to staged); ESC aborts. Each phase sets the
+# existing shutdown_event (the strategy loop polls it, like Ctrl-C), so the
+# freeze is simply the entry waiting between strategy.run() and teardown. No
+# strategy edits needed; interactive mode keeps its own stdin controller. -anr
+def _space_gate(prompt: str) -> str:
+    """Block until SPACE or ESC. Returns 'space', 'esc', or 'skip' (pynput absent)."""
+    try:
+        from pynput import keyboard as _kb
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Keyboard controls unavailable (%s); continuing.", e)
+        return "skip"
+    result = {"key": None}
+
+    def _on(key):
+        if key == _kb.Key.space:
+            result["key"] = "space"
+            return False
+        if key == _kb.Key.esc:
+            result["key"] = "esc"
+            return False
+
+    logger.info(prompt)
+    with _kb.Listener(on_press=_on) as _gl:
+        _gl.join()
+    return result["key"] or "skip"
+
+def _run_listener(shutdown_event, flags):
+    """During the run: SPACE ends the policy (then freeze), ESC aborts. Both set
+    shutdown_event so the strategy loop exits; ESC also flags abort so the caller
+    skips the freeze. Returns the listener, or None if pynput is absent."""
+    try:
+        from pynput import keyboard as _kb
+    except Exception:  # noqa: BLE001
+        return None
+
+    def _on(key):
+        if key == _kb.Key.space:
+            shutdown_event.set()
+            return False
+        if key == _kb.Key.esc:
+            flags["abort"] = True
+            shutdown_event.set()
+            return False
+
+    listener = _kb.Listener(on_press=_on)
+    listener.start()
+    logger.info("Running. SPACE = end & freeze | ESC = abort.")
+    return listener
+# <<< keyboard controls
 
 @parser.wrap()
 def rollout(cfg: RolloutConfig):
@@ -260,8 +310,28 @@ def rollout(cfg: RolloutConfig):
             logger.info("Rollout setup complete — starting interactive session (robot idle until /start)")
             InteractiveSession(strategy, ctx).run()
         else:
-            logger.info("Rollout setup complete, starting rollout...")
-            strategy.run(ctx)
+            #logger.info("Rollout setup complete, starting rollout...")
+            #strategy.run(ctx)
+            # >>> SPACE-driven controls: start / end+freeze / park; ESC aborts. -anr
+            _k = _space_gate("Ready. Press SPACE to start the rollout (ESC to cancel).")
+            if _k == "esc":
+                logger.info("Rollout cancelled before start.")
+                return  # outer finally still runs teardown
+            _flags = {"abort": False}
+            _listener = _run_listener(shutdown_event, _flags) if _k == "space" else None
+            try:
+                logger.info("Rollout setup complete, starting rollout...")
+                strategy.run(ctx)
+            finally:
+                if _listener is not None:
+                    _listener.stop()
+            if _k == "space" and not _flags["abort"]:
+                try:
+                    ctx.policy.inference.pause()
+                except Exception:  # noqa: BLE001
+                    pass
+                _space_gate("Run finished — holding final pose. SPACE to return to staged (ESC to quit).")
+            # <<< SPACE-driven controls
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
     finally:
